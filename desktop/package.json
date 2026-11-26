@@ -1,0 +1,67 @@
+{
+  "name": "alba-desktop",
+  "version": "1.0.0",
+  "description": "ALBA SERVICE GROUP PLATFORM - Application Desktop",
+  "main": "dist-desktop/main.js",
+  "scripts": {
+    "dev": "concurrently \"npm run build:watch\" \"wait-on dist-desktop/main.js && electron .\"",
+    "build:watch": "tsc -p tsconfig.json --watch",
+    "build": "tsc -p tsconfig.json",
+    "dist": "npm run build && electron-builder",
+    "dist:win": "npm run build && electron-builder --win",
+    "dist:linux": "npm run build && electron-builder --linux",
+    "dist:mac": "npm run build && electron-builder --mac",
+    "start": "npm run build && electron ."
+  },
+  "build": {
+    "appId": "com.alba-service-group.platform",
+    "productName": "ALBA SERVICE GROUP PLATFORM",
+    "copyright": "© 2026 ALBA SERVICE GROUP",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist-desktop/**/*",
+      "assets/**/*",
+      "node_modules/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "../frontend/dist",
+        "to": "frontend-build",
+        "filter": ["**/*"]
+      }
+    ],
+    "win": {
+      "target": ["nsis", "portable"],
+      "icon": "assets/icon.ico"
+    },
+    "linux": {
+      "target": ["AppImage", "deb"],
+      "icon": "assets/icon.png",
+      "category": "Office"
+    },
+    "mac": {
+      "target": ["dmg"],
+      "icon": "assets/icon.icns"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "concurrently": "^9.0.0",
+    "electron": "^36.0.0",
+    "electron-builder": "^26.0.0",
+    "typescript": "^5.7.3",
+    "wait-on": "^8.0.0"
+  },
+  "dependencies": {
+    "electron-is-dev": "^2.0.0",
+    "electron-updater": "^6.1.7"
+  }
+}
