@@ -10,9 +10,11 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
+  BadRequestException,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { StockService } from './stock.service';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
 
 @Controller('stock')
 @UseGuards(AuthGuard('jwt'))
@@ -67,14 +69,16 @@ export class StockController {
       purchasePrice?: number;
       sellingPrice?: number;
       minStock?: number;
+      criticalStock?: number;
       maxStock?: number;
       currentStock?: number;
       barcode?: string;
       image?: string;
       notes?: string;
     },
+    @CurrentUser('id') userId: string,
   ) {
-    return this.stockService.createProduct(body);
+    return this.stockService.createProduct(body, userId);
   }
 
   @Get('products')
@@ -113,6 +117,7 @@ export class StockController {
       purchasePrice?: number;
       sellingPrice?: number;
       minStock?: number;
+      criticalStock?: number;
       maxStock?: number;
       currentStock?: number;
       barcode?: string;
@@ -120,8 +125,9 @@ export class StockController {
       notes?: string;
       isActive?: boolean;
     },
+    @CurrentUser('id') userId: string,
   ) {
-    return this.stockService.updateProduct(id, body);
+    return this.stockService.updateProduct(id, body, userId);
   }
 
   @Delete('products/:id')
@@ -212,8 +218,9 @@ export class StockController {
       reference?: string;
       notes?: string;
     },
+    @CurrentUser('id') userId: string,
   ) {
-    return this.stockService.createStockMovement(body);
+    return this.stockService.createStockMovement({ ...body, userId });
   }
 
   @Get('stock-movements')
@@ -255,8 +262,8 @@ export class StockController {
   }
 
   @Post('inventory/:id/complete')
-  async completeInventorySession(@Param('id') id: string) {
-    return this.stockService.completeInventorySession(id);
+  async completeInventorySession(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    return this.stockService.completeInventorySession(id, userId);
   }
 
   // ==================== ALERTES ====================
@@ -264,6 +271,25 @@ export class StockController {
   @Get('alerts')
   async getStockAlerts(@Query('includeResolved') includeResolved?: string) {
     return this.stockService.getStockAlerts(includeResolved === 'true');
+  }
+
+  @Get('reports')
+  async listStockReports(@Query('period') period?: string) {
+    if (period && period !== 'DAILY' && period !== 'WEEKLY') {
+      throw new BadRequestException('La période doit être DAILY ou WEEKLY.');
+    }
+    return this.stockService.listStockReports(period as 'DAILY' | 'WEEKLY' | undefined);
+  }
+
+  @Post('reports/:period/generate')
+  async generateStockReport(
+    @Param('period') period: string,
+    @Query('startDate') startDate?: string,
+  ) {
+    if (period !== 'DAILY' && period !== 'WEEKLY') {
+      throw new BadRequestException('La période doit être DAILY ou WEEKLY.');
+    }
+    return this.stockService.generateStockReport(period, startDate);
   }
 
   @Post('alerts/:id/resolve')
@@ -277,7 +303,8 @@ export class StockController {
   @HttpCode(HttpStatus.OK)
   async adjustStock(
     @Body() body: { productId: string; newQuantity: number; reason: string },
+    @CurrentUser('id') userId: string,
   ) {
-    return this.stockService.adjustStock(body);
+    return this.stockService.adjustStock({ ...body, userId });
   }
 }

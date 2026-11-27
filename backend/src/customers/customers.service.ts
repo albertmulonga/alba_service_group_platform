@@ -1,11 +1,15 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class CustomersService {
   private readonly logger = new Logger(CustomersService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
+  ) {}
 
   async create(data: any, userId: string) {
     const prisma = this.prisma as any;
@@ -25,6 +29,15 @@ export class CustomersService {
     });
     await prisma.customerActivity.create({
       data: { customerId: customer.id, userId, type: 'call', description: 'Création du client' },
+    });
+    await this.notifications.notifyEmployees({
+      eventType: 'CUSTOMER_REGISTERED',
+      eventId: customer.id,
+      title: 'Nouveau client enregistré',
+      content: `${customer.firstName} ${customer.lastName} (${customer.code}) vient d’être enregistré.`,
+      module: 'Clients',
+      link: '/clients',
+      type: 'info',
     });
     return customer;
   }

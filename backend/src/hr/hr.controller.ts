@@ -15,11 +15,19 @@ import {
 import { AuthGuard } from '@nestjs/passport';
 import { HrService } from './hr.service';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { AttendanceSecurityService } from './attendance-security.service';
+import type {
+  AuthenticationResponseJSON,
+  RegistrationResponseJSON,
+} from '@simplewebauthn/server';
 
 @Controller('hr')
 @UseGuards(AuthGuard('jwt'))
 export class HrController {
-  constructor(private readonly hrService: HrService) {}
+  constructor(
+    private readonly hrService: HrService,
+    private readonly attendanceSecurityService: AttendanceSecurityService,
+  ) {}
 
   // --- EMPLOYEES ---
 
@@ -46,6 +54,11 @@ export class HrController {
   @Post('employees')
   async createEmployee(@Body() data: any) {
     return this.hrService.createEmployee(data);
+  }
+
+  @Post('employees/onboard')
+  async onboardEmployee(@Body() data: any) {
+    return this.hrService.onboardEmployee(data);
   }
 
   @Put('employees/:id')
@@ -101,6 +114,54 @@ export class HrController {
   }
 
   // --- ATTENDANCE ---
+
+  @Get('attendance')
+  async findAttendanceDashboard() {
+    return this.hrService.findAttendanceDashboard();
+  }
+
+  @Post('attendance')
+  async createAttendanceDashboard(@Body() data: any) {
+    return this.hrService.createAttendanceDashboard(data);
+  }
+
+  @Put('attendance/:id')
+  async updateAttendanceDashboard(@Param('id') id: string, @Body() data: any) {
+    return this.hrService.updateAttendanceDashboard(id, data);
+  }
+
+  @Post('employees/:employeeId/cards/issue')
+  async issueEmployeeCard(@Param('employeeId') employeeId: string) {
+    return this.attendanceSecurityService.issueEmployeeCard(employeeId);
+  }
+
+  @Post('attendance/webauthn/register/options')
+  async getAttendanceRegistrationOptions(@CurrentUser('id') userId: string) {
+    return this.attendanceSecurityService.registrationOptions(userId);
+  }
+
+  @Post('attendance/webauthn/register/verify')
+  async verifyAttendanceRegistration(
+    @CurrentUser('id') userId: string,
+    @Body('challengeId') challengeId: string,
+    @Body('response') response: RegistrationResponseJSON,
+  ) {
+    return this.attendanceSecurityService.verifyRegistration(userId, challengeId, response);
+  }
+
+  @Post('attendance/scan/options')
+  async getAttendanceScanOptions(@Body('token') token: string) {
+    return this.attendanceSecurityService.attendanceOptions(token);
+  }
+
+  @Post('attendance/scan/verify')
+  async verifyAttendanceScan(
+    @Body('token') token: string,
+    @Body('challengeId') challengeId: string,
+    @Body('response') response: AuthenticationResponseJSON,
+  ) {
+    return this.attendanceSecurityService.verifyAttendance(token, challengeId, response);
+  }
 
   @Get('employees/:employeeId/attendance')
   async findAllAttendance(

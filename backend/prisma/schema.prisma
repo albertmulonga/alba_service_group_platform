@@ -22,6 +22,36 @@ enum UserStatus {
   PENDING
 }
 
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  WHATSAPP
+}
+
+enum NotificationDeliveryStatus {
+  PENDING
+  PROCESSING
+  SENT
+  FAILED
+  CANCELLED
+}
+
+enum StockReportPeriod {
+  DAILY
+  WEEKLY
+}
+
+enum PaymentStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+}
+
+enum AttendanceChallengePurpose {
+  REGISTRATION
+  ATTENDANCE
+}
+
 enum Gender {
   MALE
   FEMALE
@@ -123,9 +153,11 @@ model User {
   loginHistory       LoginHistory[]
   activityLogs       ActivityLog[]
   notifications      Notification[]
+  notificationPreferences NotificationPreference[]
   sessions           Session[]
   customerNotes      CustomerNote[]
   customerActivities CustomerActivity[]
+  customerProfile    Customer? @relation("CustomerPortal")
 
   @@index([companyId])
   @@index([email])
@@ -274,6 +306,45 @@ model Notification {
   @@index([createdAt])
 }
 
+model NotificationDelivery {
+  id             String                     @id @default(cuid())
+  eventType      String
+  eventId        String
+  channel        NotificationChannel
+  recipient      String
+  title          String
+  content        String
+  payload        Json?
+  status         NotificationDeliveryStatus @default(PENDING)
+  attempts       Int                        @default(0)
+  maxAttempts    Int                        @default(5)
+  nextAttemptAt  DateTime                   @default(now())
+  sentAt         DateTime?
+  lastError      String?
+  createdAt      DateTime                   @default(now())
+  updatedAt      DateTime                   @updatedAt
+
+  @@unique([eventType, eventId, channel, recipient])
+  @@index([status, nextAttemptAt])
+  @@index([eventType, createdAt])
+  @@index([recipient, createdAt])
+}
+
+model NotificationPreference {
+  id        String              @id @default(cuid())
+  userId    String
+  channel   NotificationChannel
+  eventType String
+  enabled   Boolean             @default(true)
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, channel, eventType])
+  @@index([userId])
+}
+
 model SystemSetting {
   id        String   @id @default(cuid())
   companyId String
@@ -328,6 +399,7 @@ enum CustomerStatus {
 
 model Customer {
   id             String           @id @default(cuid())
+  userId         String?          @unique
   branchId       String?
   code           String           @unique
   category       CustomerCategory @default(INDIVIDUAL)
@@ -358,6 +430,8 @@ model Customer {
   updatedAt      DateTime         @updatedAt
 
   branch             Branch?             @relation(fields: [branchId], references: [id])
+  portalUser         User?               @relation("CustomerPortal", fields: [userId], references: [id], onDelete: SetNull)
+  activationTokens   CustomerActivationToken[]
   contacts           CustomerContact[]
   addresses          CustomerAddress[]
   documents          CustomerDocument[]
@@ -379,6 +453,19 @@ model Customer {
   @@index([phone])
   @@index([category])
   @@index([status])
+}
+
+model CustomerActivationToken {
+  id        String    @id @default(cuid())
+  customerId String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId, expiresAt])
 }
 
 model CustomerContact {
@@ -668,6 +755,7 @@ model Product {
   purchasePrice Decimal? @db.Decimal(15, 2)
   sellingPrice  Decimal? @db.Decimal(15, 2)
   minStock      Int      @default(0)
+  criticalStock Int      @default(0)
   maxStock      Int?
   currentStock  Int      @default(0)
   isActive      Boolean  @default(true)
@@ -718,6 +806,7 @@ model StockMovement {
   productId    String
   type         MovementType
   quantity     Int
+  quantityDelta Int?
   unitPrice    Decimal?     @db.Decimal(15, 2)
   totalPrice   Decimal?     @db.Decimal(15, 2)
   locationId   String?
@@ -740,15 +829,31 @@ model StockAlert {
   id         String    @id @default(cuid())
   productId  String
   type       String // low_stock, out_of_stock, expired
+  severity   String    @default("LOW")
   message    String
   isResolved Boolean   @default(false)
   resolvedAt DateTime?
+  lastNotifiedAt DateTime?
   createdAt  DateTime  @default(now())
 
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@index([productId])
   @@index([isResolved])
+  @@index([productId, isResolved, severity])
+}
+
+model StockReport {
+  id          String           @id @default(cuid())
+  period      StockReportPeriod
+  periodStart DateTime
+  periodEnd   DateTime
+  generatedAt DateTime         @default(now())
+  data        Json
+  createdAt   DateTime         @default(now())
+
+  @@unique([period, periodStart])
+  @@index([generatedAt])
 }
 
 model InventorySession {
@@ -1179,6 +1284,7 @@ model Payment {
   id          String   @id @default(cuid())
   invoiceId   String
   amount      Decimal  @db.Decimal(15, 2)
+  status      PaymentStatus @default(CONFIRMED)
   methodId    String?
   reference   String? // transaction number
   notes       String?
@@ -1347,6 +1453,9 @@ model Employee {
   documents      EmployeeDocument[]
   contracts      Contract[]
   attendance     Attendance[]
+  cards          EmployeeCard[]
+  authenticators EmployeeAuthenticator[]
+  attendanceChallenges AttendanceChallenge[]
   leaves         Leave[]
   salaries       Salary[]
   salaryPayments SalaryPayment[]
@@ -1355,6 +1464,48 @@ model Employee {
   @@index([departmentId])
   @@index([status])
   @@index([code])
+}
+
+model EmployeeCard {
+  id        String    @id @default(cuid())
+  employeeId String
+  tokenHash String    @unique
+  issuedAt  DateTime  @default(now())
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId, revokedAt])
+}
+
+model EmployeeAuthenticator {
+  id           String    @id @default(cuid())
+  employeeId   String
+  credentialId String    @unique
+  publicKey    Bytes
+  counter      Int       @default(0)
+  transports   String?
+  createdAt    DateTime  @default(now())
+  lastUsedAt   DateTime?
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+}
+
+model AttendanceChallenge {
+  id          String                       @id @default(cuid())
+  employeeId  String
+  purpose     AttendanceChallengePurpose
+  challenge   String                       @unique
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  createdAt   DateTime                     @default(now())
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId, purpose, expiresAt])
 }
 
 model EmployeeDocument {
@@ -1396,6 +1547,8 @@ model Attendance {
   date        DateTime
   checkIn     DateTime?
   checkOut    DateTime?
+  checkInMethod  String?
+  checkOutMethod String?
   status      String // present, absent, late, half_day, holiday
   hoursWorked Float?
   notes       String?
@@ -2031,8 +2184,10 @@ model Message {
 model EmailTemplate {
   id        String   @id @default(cuid())
   name      String
+  eventType String?  @unique
   subject   String
   body      String
+  isActive  Boolean  @default(true)
   variables Json?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

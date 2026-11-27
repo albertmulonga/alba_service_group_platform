@@ -1,0 +1,10 @@
+CREATE TYPE "PaymentStatus" AS ENUM ('PENDING', 'CONFIRMED', 'CANCELLED');
+
+ALTER TABLE "Product"
+ADD COLUMN "criticalStock" INTEGER NOT NULL DEFAULT 0;
+
+ALTER TABLE "StockMovement"
+ADD COLUMN "quantityDelta" INTEGER;
+
+ALTER TABLE "Payment"
+ADD COLUMN "status" "PaymentStatus" NOT NULL DEFAULT 'CONFIRMED';

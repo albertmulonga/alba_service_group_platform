@@ -23,6 +23,7 @@ import { ReportsModule } from './reports/reports.module';
 import { AgendaModule } from './agenda/agenda.module';
 import { GraphicsModule } from './graphics/graphics.module';
 import { ChatModule } from './chat/chat.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
@@ -52,6 +53,7 @@ import { ChatModule } from './chat/chat.module';
     AgendaModule,
     GraphicsModule,
     ChatModule,
+    NotificationsModule,
   ],
   providers: [
     {

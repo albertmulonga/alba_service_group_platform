@@ -1,13 +1,15 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect, useCallback } from 'react'
 import PageHeader from '@/components/ui/PageHeader'
 import KpiCard from '@/components/ui/KpiCard'
 import ExportButton from '@/components/ui/ExportButton'
 import Pagination, { usePagination } from '@/components/ui/Pagination'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { useApiDB } from '@/hooks/useApiDB'
+import { api } from '@/services/api'
+import { printReport } from '@/lib/reportPrinter'
 import {
   ArrowRightLeft, Plus, Search, X, TrendingUp, TrendingDown,
-  RefreshCw, RotateCcw, Package, DollarSign, Filter
+  RefreshCw, RotateCcw, Package, DollarSign, Filter, FileText, Clock
 } from 'lucide-react'
 
 interface ProductType {
@@ -34,6 +36,31 @@ interface MovementType {
   motif: string
   reference: string
   operator: string
+}
+
+interface StockReport {
+  id: string
+  period: 'DAILY' | 'WEEKLY'
+  periodStart: string
+  periodEnd: string
+  generatedAt: string
+  data: {
+    productCount: number
+    totalStockValue: number
+    lowStockCount: number
+    outOfStockCount: number
+    movementCount: number
+    products: {
+      code: string
+      name: string
+      category: string | null
+      currentStock: number
+      minStock: number
+      stockValue: number
+      isLowStock: boolean
+      isOutOfStock: boolean
+    }[]
+  }
 }
 
 const DEFAULT_PRODUCTS: ProductType[] = [
@@ -94,6 +121,67 @@ function generateMovCode(items: MovementType[]): string {
 export default function StockMovementsPage() {
   const { items: movements, add: addMovement, loading, error, refresh } = useApiDB<MovementType>('/stock/stock-movements', [], (raw: any) => ({ ...raw }))
   const { items: stockProducts, update: updateStock, refresh: refreshStock } = useApiDB<ProductType>('/stock/products', [], (raw: any) => ({ ...raw }))
+  const [stockReports, setStockReports] = useState<StockReport[]>([])
+  const [reportsLoading, setReportsLoading] = useState(true)
+  const [reportError, setReportError] = useState('')
+  const [generatingPeriod, setGeneratingPeriod] = useState<StockReport['period'] | null>(null)
+
+  const loadStockReports = useCallback(async () => {
+    setReportsLoading(true)
+    try {
+      const { data } = await api.get<StockReport[]>('/stock/reports')
+      setStockReports(data)
+      setReportError('')
+    } catch (requestError) {
+      console.error('Impossible de charger les rapports de stock.', requestError)
+      setReportError('Les rapports de stock ne sont pas disponibles pour le moment.')
+    } finally {
+      setReportsLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadStockReports()
+  }, [loadStockReports])
+
+  async function generateStockReport(period: StockReport['period']) {
+    setGeneratingPeriod(period)
+    setReportError('')
+    try {
+      await api.post(`/stock/reports/${period}/generate`)
+      await loadStockReports()
+    } catch (requestError) {
+      console.error('Impossible de générer le rapport de stock.', requestError)
+      setReportError('La génération du rapport a échoué. Réessayez plus tard.')
+    } finally {
+      setGeneratingPeriod(null)
+    }
+  }
+
+  function printStockReport(report: StockReport) {
+    printReport({
+      title: 'RAPPORT DE STOCK',
+      subtitle: report.period === 'DAILY' ? 'Rapport quotidien des mouvements et niveaux de stock' : 'Rapport hebdomadaire des mouvements et niveaux de stock',
+      category: 'Stock',
+      period: `${formatDate(report.periodStart)} — ${formatDate(report.periodEnd)}`,
+      docNumber: report.id,
+      rows: report.data.products.map(product => ({
+        code: product.code,
+        produit: product.name,
+        catégorie: product.category,
+        stock_actuel: product.currentStock,
+        seuil_minimum: product.minStock,
+        valeur_stock: formatCurrency(product.stockValue),
+        état: product.isOutOfStock ? 'Rupture' : product.isLowStock ? 'Sous le seuil' : 'Normal',
+      })),
+      summaryCards: [
+        { label: 'Mouvements', value: String(report.data.movementCount), color: '#2563EB' },
+        { label: 'Produits sous seuil', value: String(report.data.lowStockCount), color: '#D97706' },
+        { label: 'Ruptures', value: String(report.data.outOfStockCount), color: '#DC2626' },
+        { label: 'Valeur du stock', value: formatCurrency(report.data.totalStockValue), color: '#059669' },
+      ],
+    })
+  }
 
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState<string>('all')
@@ -239,6 +327,54 @@ export default function StockMovementsPage() {
         <KpiCard title="Sorties totales" value={`${exitsQty} u.`} icon={<TrendingDown size={20} />} gradient="gradient-danger" />
         <KpiCard title="Valeur des sorties" value={`${(exitsValue / 1000000).toFixed(1)}M FC`} icon={<DollarSign size={20} />} gradient="gradient-warning" />
       </div>
+
+      <section className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        <div className="flex items-center justify-between gap-3 p-5 border-b border-gray-100">
+          <div>
+            <h2 className="text-sm font-bold text-gray-800 flex items-center gap-2">
+              <FileText size={16} className="text-amber-600" /> Rapports de stock
+            </h2>
+            <p className="text-xs text-gray-500 mt-1">Archives quotidiennes et hebdomadaires imprimables</p>
+          </div>
+          <div className="flex items-center gap-2">
+            {(['DAILY', 'WEEKLY'] as const).map(period => (
+              <button
+                key={period}
+                onClick={() => void generateStockReport(period)}
+                disabled={generatingPeriod !== null}
+                className="px-3 py-2 text-xs font-semibold rounded-lg border border-amber-200 text-amber-800 hover:bg-amber-50 disabled:opacity-50">
+                {generatingPeriod === period ? 'Génération...' : period === 'DAILY' ? 'Rapport quotidien' : 'Rapport hebdomadaire'}
+              </button>
+            ))}
+          </div>
+        </div>
+        {reportError && <p role="alert" className="px-5 pt-4 text-xs text-red-600">{reportError}</p>}
+        {reportsLoading ? (
+          <p className="p-5 text-xs text-gray-500">Chargement des archives...</p>
+        ) : stockReports.length === 0 ? (
+          <p className="p-5 text-xs text-gray-500">Aucun rapport archivé. Générez un rapport ou attendez la génération automatique à l’heure configurée.</p>
+        ) : (
+          <div className="divide-y divide-gray-100">
+            {stockReports.slice(0, 5).map(report => (
+              <div key={report.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
+                <div>
+                  <p className="text-xs font-semibold text-gray-700">
+                    Rapport {report.period === 'DAILY' ? 'quotidien' : 'hebdomadaire'} · {formatDate(report.periodStart)}
+                  </p>
+                  <p className="text-[11px] text-gray-500 mt-1 flex items-center gap-1">
+                    <Clock size={11} /> {report.data.movementCount} mouvement(s), {report.data.lowStockCount} sous le seuil, {report.data.outOfStockCount} rupture(s)
+                  </p>
+                </div>
+                <button
+                  onClick={() => printStockReport(report)}
+                  className="px-3 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg">
+                  Imprimer / PDF
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
 
       {/* Filters */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">

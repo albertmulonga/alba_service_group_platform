@@ -7,10 +7,11 @@ import { useApiDB } from '@/hooks/useApiDB'
 import { api } from '@/services/api'
 import ExportButton from '@/components/ui/ExportButton'
 import Pagination, { usePagination } from '@/components/ui/Pagination'
+import AttendanceQrTools from '@/components/hr/AttendanceQrTools'
 import {
   Clock, Search, Filter,
   LogIn, LogOut, Users, AlertTriangle, CheckCircle,
-  X, ChevronLeft, ChevronRight, Calendar, Edit3
+  X, ChevronLeft, ChevronRight, Calendar, Edit3, QrCode
 } from 'lucide-react'
 
 type AttendanceStatus = 'Present' | 'Absent' | 'En retard' | 'Conge'
@@ -30,8 +31,19 @@ type AttendanceRecord = {
 
 const employees: { id: string; name: string; dept: string }[] = []
 
-const today = new Date().toISOString().slice(0, 10)
-const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10)
+function companyDateKey(date: Date) {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Africa/Lubumbashi',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date)
+  const part = (type: string) => parts.find(item => item.type === type)?.value ?? ''
+  return `${part('year')}-${part('month')}-${part('day')}`
+}
+
+const today = companyDateKey(new Date())
+const yesterday = companyDateKey(new Date(Date.now() - 86400000))
 
 const mockAttendance: AttendanceRecord[] = [
   { id: '1', employeeId: '1', employeeName: 'Jean Mukendi', department: 'Imprimerie', date: today, clockIn: '07:55', clockOut: '', duration: '', status: 'Present', notes: '' },
@@ -76,6 +88,7 @@ export default function AttendancePage() {
   const [dateFilter, setDateFilter] = useState(today)
   const [employeeFilter, setEmployeeFilter] = useState('all')
   const [showCalendar, setShowCalendar] = useState(false)
+  const [showQrTools, setShowQrTools] = useState(false)
   const [calMonth, setCalMonth] = useState(new Date().getMonth())
   const [calYear, setCalYear] = useState(new Date().getFullYear())
   const [showNoteModal, setShowNoteModal] = useState<AttendanceRecord | null>(null)
@@ -135,7 +148,15 @@ export default function AttendancePage() {
     if (!emp) return
     const now = new Date()
     const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
-    const isLate = now.getHours() > 8 || (now.getHours() === 8 && now.getMinutes() > 0)
+    const companyTime = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Africa/Lubumbashi',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    }).formatToParts(now)
+    const hour = Number(companyTime.find(part => part.type === 'hour')?.value ?? 0)
+    const minute = Number(companyTime.find(part => part.type === 'minute')?.value ?? 0)
+    const isLate = hour > 8 || (hour === 8 && minute > 0)
     const existing = records.find(r => r.employeeId === empId && r.date === dateFilter)
     if (existing) {
       update(existing.id, { clockIn: time, status: isLate ? 'En retard' : 'Present' })
@@ -221,6 +242,10 @@ export default function AttendancePage() {
             <button onClick={() => setShowCalendar(v => !v)}
               className={`flex items-center gap-2 px-3 py-2 text-sm rounded-xl border transition-colors ${showCalendar ? 'bg-blue-50 border-blue-300 text-blue-700' : 'text-gray-600 border-gray-200 bg-white hover:bg-gray-50'}`}>
               <Calendar size={15} /> Calendrier
+            </button>
+            <button onClick={() => setShowQrTools(true)}
+              className="flex items-center gap-2 px-3 py-2 text-sm rounded-xl border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors">
+              <QrCode size={15} /> Badges & scan QR
             </button>
           </div>
         }
@@ -451,6 +476,11 @@ export default function AttendancePage() {
           </div>
         </div>
       )}
+      <AttendanceQrTools
+        open={showQrTools}
+        onClose={() => setShowQrTools(false)}
+        onAttendanceRecorded={() => { void refresh() }}
+      />
     </div>
   )
 }

@@ -5,7 +5,11 @@ class ApiConfig {
   // Backend base URL — adjust for your server
   // Emulator: 10.0.2.2 → host machine
   // Physical device: use your PC's LAN IP (ex: http://192.168.1.20:4000)
-  static const String baseUrl       = 'http://10.0.2.2:4000/api';
+  // Deployed builds: pass --dart-define=API_BASE_URL=https://api.example.com/api
+  static const String baseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'http://10.0.2.2:4000/api',
+  );
   static const String apiPrefix     = '/api';
 
   // Auth
